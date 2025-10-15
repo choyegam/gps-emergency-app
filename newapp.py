@@ -223,3 +223,4 @@ if __name__ == "__main__":
                     print("⚠️ 가용 병원이 없습니다.")
         except Exception as e:
             print(f"❌ 카카오 API 호출 실패 (예외: {e})")
+
