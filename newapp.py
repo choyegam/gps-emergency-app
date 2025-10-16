@@ -1,17 +1,18 @@
 # ================================================
 # 🚑 Ambulance Route Optimization (Hybrid: A* 70% + GA 30%) + 실시간 GPS + 카카오 API
-# ✅ 비가용 병원 고정 + 비가용 목록 표시 (Render 완벽 호환)
+# ✅ 비가용 병원은 한 세션 동안만 고정, 추적 재시작 시 새로 설정
+# ✅ Render 호환 완벽
 # ================================================
 
 import os, time, random, math, requests
 from flask import Flask, request, render_template_string, jsonify
 
 # ===== 설정 =====
-KAKAO_API_KEY = os.environ.get("KAKAO_API_KEY")  # GitHub 환경변수에 저장된 키
+KAKAO_API_KEY = os.environ.get("KAKAO_API_KEY")  # GitHub 환경변수에 등록된 키 사용
 PORT = int(os.environ.get("PORT", 5000))
 
 coords = {"lat": None, "lon": None, "accuracy": None, "ts": None}
-UNAVAILABLE_HOSPITALS = set()  # 비가용 병원 이름 저장 (고정됨)
+UNAVAILABLE_HOSPITALS = None  # 세션 내 비가용 병원 저장
 
 # ===== 가중치 =====
 WEIGHT_NARROW = 0.3
@@ -32,13 +33,14 @@ def compute_weighted_time(distance_m, road_name=""):
 
 
 def assign_fixed_availability(hospitals, max_unavail_frac=0.5):
-    """이미 저장된 비가용 병원은 그대로, 없을 때만 새로 설정"""
+    """세션 동안만 비가용 병원 고정"""
     global UNAVAILABLE_HOSPITALS
-    if not UNAVAILABLE_HOSPITALS:  # 처음 한 번만 무작위 선택
+    if UNAVAILABLE_HOSPITALS is None:
         frac = random.uniform(0, max_unavail_frac)
         num_unavail = int(len(hospitals) * frac)
         unavail = random.sample(hospitals, num_unavail) if num_unavail else []
-        UNAVAILABLE_HOSPITALS = set(h["name"] for h in unavail)
+        UNAVAILABLE_HOSPITALS = [h["name"] for h in unavail]
+
     for h in hospitals:
         h["available"] = (h["name"] not in UNAVAILABLE_HOSPITALS)
     return UNAVAILABLE_HOSPITALS
@@ -136,6 +138,7 @@ document.getElementById('startBtn').onclick=()=>{
   document.getElementById('startBtn').disabled=true;
   document.getElementById('stopBtn').disabled=false;
   log('⏳ 위치 권한 요청 중…');
+  fetch('/reset'); // 세션 초기화
   watchId=navigator.geolocation.watchPosition(
     pos=>{
       const lat=pos.coords.latitude.toFixed(6);
@@ -163,6 +166,14 @@ document.getElementById('stopBtn').onclick=()=>{
 @app.route("/")
 def index():
     return render_template_string(HTML)
+
+
+@app.route("/reset")
+def reset_session():
+    """GPS 추적 재시작 시 비가용 병원 초기화"""
+    global UNAVAILABLE_HOSPITALS
+    UNAVAILABLE_HOSPITALS = None
+    return jsonify(ok=True, msg="세션 초기화 완료")
 
 
 @app.route("/update", methods=["POST"])
