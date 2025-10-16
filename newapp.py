@@ -1,15 +1,17 @@
 # ================================================
 # 🚑 Ambulance Route Optimization (Hybrid: A* 70% + GA 30%) + 실시간 GPS + 카카오 API
-# ✅ 실시간 GPS 전송 + 결과 표시 (Render 호환)
+# ✅ 비가용 병원 고정 + 비가용 목록 표시 (Render 완벽 호환)
 # ================================================
 
 import os, time, random, math, requests
 from flask import Flask, request, render_template_string, jsonify
 
 # ===== 설정 =====
-KAKAO_API_KEY = os.environ.get("KAKAO_API_KEY")  # GitHub에 저장한 API 키 사용
+KAKAO_API_KEY = os.environ.get("KAKAO_API_KEY")  # GitHub 환경변수에 저장된 키
 PORT = int(os.environ.get("PORT", 5000))
+
 coords = {"lat": None, "lon": None, "accuracy": None, "ts": None}
+UNAVAILABLE_HOSPITALS = set()  # 비가용 병원 이름 저장 (고정됨)
 
 # ===== 가중치 =====
 WEIGHT_NARROW = 0.3
@@ -29,13 +31,17 @@ def compute_weighted_time(distance_m, road_name=""):
     return time_min * (1 + penalty)
 
 
-def assign_random_availability(hospitals, max_unavail_frac=0.5):
-    frac = random.uniform(0, max_unavail_frac)
-    num_unavail = int(len(hospitals) * frac)
-    unavail = random.sample(hospitals, num_unavail) if num_unavail else []
+def assign_fixed_availability(hospitals, max_unavail_frac=0.5):
+    """이미 저장된 비가용 병원은 그대로, 없을 때만 새로 설정"""
+    global UNAVAILABLE_HOSPITALS
+    if not UNAVAILABLE_HOSPITALS:  # 처음 한 번만 무작위 선택
+        frac = random.uniform(0, max_unavail_frac)
+        num_unavail = int(len(hospitals) * frac)
+        unavail = random.sample(hospitals, num_unavail) if num_unavail else []
+        UNAVAILABLE_HOSPITALS = set(h["name"] for h in unavail)
     for h in hospitals:
-        h["available"] = (h not in unavail)
-    return frac, [h["name"] for h in unavail]
+        h["available"] = (h["name"] not in UNAVAILABLE_HOSPITALS)
+    return UNAVAILABLE_HOSPITALS
 
 
 def select_best_GA(hospitals, pop_size=10, gens=5, mutation_rate=0.2):
@@ -68,7 +74,7 @@ def select_best_GA(hospitals, pop_size=10, gens=5, mutation_rate=0.2):
     return hospitals[best_ch[0]]
 
 
-# ===== Flask 설정 =====
+# ===== Flask 앱 설정 =====
 app = Flask(__name__)
 
 HTML = """
@@ -83,6 +89,7 @@ button { font-size:18px; padding:12px 16px; margin-right:8px; }
 #log { margin-top:12px; white-space:pre-line; }
 #result { margin-top:20px; padding:10px; background:#f9f9f9; border-radius:8px; }
 .best { background:#e6ffe6; padding:8px; border-radius:6px; margin-top:8px; }
+.unavail { background:#ffeaea; padding:8px; border-radius:6px; margin-top:12px; }
 </style>
 </head>
 <body>
@@ -104,9 +111,11 @@ function renderResults(data){
   if(data.best){
     html+=`<div class="best"><b>🏆 최적 응급실:</b><br>${data.best.name}<br>${data.best.address}<br>거리: ${data.best.distance_m}m<br>예상 소요: ${data.best.weighted_time}분</div>`;
   }
+  if(data.unavailable_list && data.unavailable_list.length){
+    html+=`<div class="unavail"><b>🚫 현재 비가용 병원:</b><br>${data.unavailable_list.join('<br>')}</div>`;
+  }
   if(data.hospitals && data.hospitals.length){
-    html+='<h3>📋 병원 목록</h3>';
-    html+='<ul>';
+    html+='<h3>📋 병원 목록</h3><ul>';
     data.hospitals.forEach((h,i)=>{
       html+=`<li>${i+1}. ${h.name} (${h.address}) - 거리: ${h.distance_m}m / 소요: ${h.weighted_time}분 / 상태: ${h.available?'가용':'비가용'}</li>`;
     });
@@ -155,6 +164,7 @@ document.getElementById('stopBtn').onclick=()=>{
 def index():
     return render_template_string(HTML)
 
+
 @app.route("/update", methods=["POST"])
 def update():
     data = request.get_json(silent=True) or {}
@@ -170,6 +180,7 @@ def update():
 
     hospitals = []
     best = None
+    unavailable_list = []
     try:
         url = "https://dapi.kakao.com/v2/local/search/keyword.json"
         headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
@@ -192,7 +203,8 @@ def update():
             })
 
         if hospitals:
-            assign_random_availability(hospitals, 0.5)
+            unavail = assign_fixed_availability(hospitals, 0.5)
+            unavailable_list = list(unavail)
             for h in hospitals:
                 h["weighted_time"] = math.inf if not h["available"] else compute_weighted_time(h["distance_m"], h["road_name"])
             best_GA = select_best_GA(hospitals)
@@ -208,7 +220,6 @@ def update():
     except Exception as e:
         print(f"❌ 카카오 API 호출 실패: {e}")
 
-    # Infinity 방지
     def safe_num(v):
         if v is None: return None
         if isinstance(v, (int, float)):
@@ -223,7 +234,7 @@ def update():
         for k in ["distance_m", "weighted_time", "final_score"]:
             best[k] = safe_num(best.get(k))
 
-    return jsonify(ok=True, hospitals=hospitals, best=best)
+    return jsonify(ok=True, hospitals=hospitals, best=best, unavailable_list=unavailable_list)
 
 
 if __name__ == "__main__":
