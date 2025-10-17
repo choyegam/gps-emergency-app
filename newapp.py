@@ -1,7 +1,7 @@
 # ================================================
 # 🚑 Ambulance Route Optimization (Hybrid: A* 50% + GA 50%) + 실시간 GPS + 카카오 API
 # ✅ 비가용 병원은 한 세션 동안 고정, 추적 재시작 시 새로 설정
-# ✅ 비가용 병원 소요 시간: "N/A분" 표시
+# ✅ 세션 초기화 버튼으로 화면/세션 모두 리셋
 # ✅ Render 호환 완벽
 # ================================================
 
@@ -15,11 +15,11 @@ PORT = int(os.environ.get("PORT", 5000))
 coords = {"lat": None, "lon": None, "accuracy": None, "ts": None}
 UNAVAILABLE_HOSPITALS = None
 
-# ===== 가중치 =====
+# ===== 가중치 (50:50 반영) =====
 WEIGHT_NARROW = 0.3
 WEIGHT_ALLEY = 0.5
-A_STAR_WEIGHT = 0.5   # 🔹 A* 50%
-GA_WEIGHT = 0.5       # 🔹 GA 50%
+A_STAR_WEIGHT = 0.5
+GA_WEIGHT = 0.5
 
 
 # ===== 헬퍼 함수 =====
@@ -99,6 +99,7 @@ button { font-size:18px; padding:12px 16px; margin-right:8px; }
 <h2>📍 실시간 GPS 전송 & 응급실 검색</h2>
 <p>아래 버튼을 눌러 위치 권한을 허용하세요.</p>
 <button id="startBtn">실시간 추적 시작</button>
+<button id="stopBtn" disabled>정지</button>
 <button id="resetBtn">세션 초기화</button>
 <div id="log">대기 중…</div>
 <div id="result"></div>
@@ -134,11 +135,28 @@ function send(lat,lon,acc){
   .catch(e=>{log('❌ 요청 실패: '+e);});
 }
 
+// ✅ 세션 초기화 버튼 기능
+document.getElementById('resetBtn').onclick=()=>{
+  if(watchId!==null){
+    navigator.geolocation.clearWatch(watchId);
+    watchId=null;
+  }
+  fetch('/reset')
+  .then(res=>res.json())
+  .then(()=>{
+    document.getElementById('startBtn').disabled=false;
+    document.getElementById('stopBtn').disabled=true;
+    document.getElementById('result').innerHTML='';
+    log('🌀 세션이 초기화되었습니다. 다시 시작하려면 [실시간 추적 시작]을 누르세요.');
+  })
+  .catch(e=>log('❌ 초기화 실패: '+e));
+};
+
 document.getElementById('startBtn').onclick=()=>{
   if(!navigator.geolocation){log('❌ GPS 미지원'); return;}
   document.getElementById('startBtn').disabled=true;
+  document.getElementById('stopBtn').disabled=false;
   log('⏳ 위치 권한 요청 중…');
-  fetch('/reset'); // 세션 초기화
   watchId=navigator.geolocation.watchPosition(
     pos=>{
       const lat=pos.coords.latitude.toFixed(6);
@@ -152,11 +170,11 @@ document.getElementById('startBtn').onclick=()=>{
   );
 };
 
-document.getElementById('resetBtn').onclick=()=>{
+document.getElementById('stopBtn').onclick=()=>{
   if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}
   document.getElementById('startBtn').disabled=false;
-  log('🔄 세션 초기화 중…');
-  fetch('/reset').then(()=>log('✅ 세션이 초기화되었습니다.'));
+  document.getElementById('stopBtn').disabled=true;
+  log('⏹ 추적 중지');
 };
 </script>
 </body>
