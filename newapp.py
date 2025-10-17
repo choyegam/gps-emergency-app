@@ -115,7 +115,7 @@ button:disabled { background:#ccc; }
 <h2>📍 실시간 GPS 전송 & 응급실 검색</h2>
 <p>아래 버튼을 눌러 위치 권한을 허용하세요.</p>
 
-<!-- ✅ 버튼 묶음 -->
+<!-- 버튼 묶음 -->
 <div class="button-group">
   <button id="startBtn">추적 시작</button>
   <button id="stopBtn" disabled>정지</button>
@@ -133,12 +133,24 @@ function renderResults(data){
   const div=document.getElementById('result');
   if(!data.ok){div.textContent='❌ 데이터 수신 실패'; return;}
   let html='';
+  
+  // ✅ 최적 응급실
   if(data.best){
     html+=`<div class="best"><b>🏆 최적 응급실:</b><br>${data.best.name}<br>${data.best.address}<br>거리: ${data.best.distance_m}m<br>예상 소요: ${data.best.weighted_time}분</div>`;
   }
-  if(data.unavailable_list && data.unavailable_list.length){
-    html+=`<div class="unavail"><b>🚫 현재 비가용 병원:</b><br>${data.unavailable_list.join('<br>')}</div>`;
+
+  // ✅ 비가용 병원 (없어도 항상 표시)
+  if(data.unavailable_list){
+    if(data.unavailable_list.length > 0){
+      html+=`<div class="unavail"><b>🚫 현재 비가용 병원:</b><br>${data.unavailable_list.join('<br>')}</div>`;
+    } else {
+      html+=`<div class="unavail"><b>🚫 현재 비가용 병원:</b><br>(없음)</div>`;
+    }
+  } else {
+    html+=`<div class="unavail"><b>🚫 현재 비가용 병원:</b><br>(없음)</div>`;
   }
+
+  // ✅ 병원 목록
   if(data.hospitals && data.hospitals.length){
     html+='<h3>📋 병원 목록</h3><ul>';
     data.hospitals.forEach((h,i)=>{
@@ -156,7 +168,7 @@ function send(lat,lon,acc){
   .catch(e=>{log('❌ 요청 실패: '+e);});
 }
 
-// ✅ 세션 초기화 버튼
+// 세션 초기화 버튼
 document.getElementById('resetBtn').onclick=()=>{
   if(watchId!==null){
     navigator.geolocation.clearWatch(watchId);
@@ -291,4 +303,5 @@ def update():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=False)
+
 
