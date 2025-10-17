@@ -1,8 +1,5 @@
 # ================================================
 # 🚑 Ambulance Route Optimization (Hybrid: A* 50% + GA 50%) + 실시간 GPS + 카카오 API
-# ✅ 비가용 병원은 한 세션 동안 고정, 추적 재시작 시 새로 설정
-# ✅ 비가용 병원 소요 시간: "N/A분" 표시
-# ✅ Render 호환 완벽
 # ================================================
 
 import os, time, random, math, requests
@@ -15,12 +12,11 @@ PORT = int(os.environ.get("PORT", 5000))
 coords = {"lat": None, "lon": None, "accuracy": None, "ts": None}
 UNAVAILABLE_HOSPITALS = None
 
-# ===== 가중치 =====
+# ===== 가중치 (50:50 적용) =====
 WEIGHT_NARROW = 0.3
 WEIGHT_ALLEY = 0.5
-A_STAR_WEIGHT = 0.5   # 🔹 A* 알고리즘 비중 50%
-GA_WEIGHT = 0.5       # 🔹 유전 알고리즘 비중 50%
-
+A_STAR_WEIGHT = 0.5
+GA_WEIGHT = 0.5
 
 # ===== 헬퍼 함수 =====
 def compute_weighted_time(distance_m, road_name=""):
@@ -34,14 +30,12 @@ def compute_weighted_time(distance_m, road_name=""):
 
 
 def assign_fixed_availability(hospitals, max_unavail_frac=0.5):
-    """세션 동안만 비가용 병원 고정"""
     global UNAVAILABLE_HOSPITALS
     if UNAVAILABLE_HOSPITALS is None:
         frac = random.uniform(0, max_unavail_frac)
         num_unavail = int(len(hospitals) * frac)
         unavail = random.sample(hospitals, num_unavail) if num_unavail else []
         UNAVAILABLE_HOSPITALS = [h["name"] for h in unavail]
-
     for h in hospitals:
         h["available"] = (h["name"] not in UNAVAILABLE_HOSPITALS)
     return UNAVAILABLE_HOSPITALS
@@ -80,19 +74,88 @@ def select_best_GA(hospitals, pop_size=10, gens=5, mutation_rate=0.2):
 # ===== Flask 앱 =====
 app = Flask(__name__)
 
-HTML = """(생략 — 동일)"""  # HTML 부분 그대로 유지
+HTML = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚑 응급실 경로 최적화</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        button { padding: 10px 15px; font-size: 16px; margin-right: 10px; cursor: pointer; }
+        pre { background: #f6f6f6; padding: 15px; border-radius: 8px; }
+        .highlight { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>🚑 응급실 경로 최적화 시스템</h2>
+    <button onclick="getGPS()">📍 위치 전송</button>
+    <button onclick="resetSession()">🔄 세션 초기화</button>
+    <div id="status"></div>
+    <pre id="output"></pre>
+
+<script>
+function getGPS(){
+    if (!navigator.geolocation){
+        alert("GPS를 지원하지 않는 기기입니다.");
+        return;
+    }
+    document.getElementById("status").innerText = "📡 위치 불러오는 중...";
+    navigator.geolocation.getCurrentPosition(success, error);
+}
+function success(pos){
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    const acc = pos.coords.accuracy;
+    document.getElementById("status").innerText = "✅ 위치 전송 완료";
+    fetch("/update", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({lat, lon, accuracy:acc})
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        if(!d.ok){alert("오류 발생"); return;}
+        let text = "📍 현재 위치: "+lat.toFixed(6)+", "+lon.toFixed(6)+"\\n";
+        text += "\\n=== 🏥 병원 목록 ===\\n";
+        d.hospitals.forEach((h,i)=>{
+            text += `${i+1}. ${h.name} (${h.distance_m}m, ${h.weighted_time}분)`+
+                    (h.available ? "" : " ❌비가용") + "\\n";
+        });
+        if(d.best){
+            text += "\\n🚨 <b>최적 병원:</b> " + d.best.name + "\\n";
+            text += `거리: ${d.best.distance_m}m, 소요: ${d.best.weighted_time}분`;
+        }
+        if(d.unavailable_list && d.unavailable_list.length){
+            text += "\\n\\n⚠ 비가용 병원: " + d.unavailable_list.join(", ");
+        }
+        document.getElementById("output").innerHTML = text;
+    })
+    .catch(e=>alert("서버 오류: "+e));
+}
+function error(e){
+    alert("GPS 오류: "+e.message);
+}
+function resetSession(){
+    fetch("/reset").then(r=>r.json()).then(d=>{
+        alert(d.msg);
+    });
+}
+</script>
+</body>
+</html>
+"""
 
 @app.route("/")
 def index():
     return render_template_string(HTML)
-
 
 @app.route("/reset")
 def reset_session():
     global UNAVAILABLE_HOSPITALS
     UNAVAILABLE_HOSPITALS = None
     return jsonify(ok=True, msg="세션 초기화 완료")
-
 
 @app.route("/update", methods=["POST"])
 def update():
@@ -168,7 +231,5 @@ def update():
 
     return jsonify(ok=True, hospitals=hospitals, best=best, unavailable_list=unavailable_list)
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=False)
-
