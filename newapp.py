@@ -88,9 +88,25 @@ HTML = """
 <title>실시간 GPS → 응급실 검색</title>
 <style>
 body { font-family: system-ui, -apple-system, sans-serif; padding:16px; }
-button { font-size:18px; padding:12px 16px; margin-right:8px; }
-#log { margin-top:12px; white-space:pre-line; }
-#result { margin-top:20px; padding:10px; background:#f9f9f9; border-radius:8px; }
+.button-group {
+  display:flex;
+  flex-wrap:nowrap;
+  justify-content:space-between;
+  gap:4px;
+  margin-bottom:10px;
+}
+button {
+  flex:1;
+  font-size:15px;
+  padding:8px 10px;
+  border:none;
+  border-radius:6px;
+  background:#007bff;
+  color:white;
+}
+button:disabled { background:#ccc; }
+#log { margin-top:12px; white-space:pre-line; font-size:14px; }
+#result { margin-top:20px; padding:10px; background:#f9f9f9; border-radius:8px; font-size:15px; }
 .best { background:#e6ffe6; padding:8px; border-radius:6px; margin-top:8px; }
 .unavail { background:#ffeaea; padding:8px; border-radius:6px; margin-top:12px; }
 </style>
@@ -98,9 +114,14 @@ button { font-size:18px; padding:12px 16px; margin-right:8px; }
 <body>
 <h2>📍 실시간 GPS 전송 & 응급실 검색</h2>
 <p>아래 버튼을 눌러 위치 권한을 허용하세요.</p>
-<button id="startBtn">실시간 추적 시작</button>
-<button id="stopBtn" disabled>정지</button>
-<button id="resetBtn">세션 초기화</button>
+
+<!-- ✅ 버튼 묶음 -->
+<div class="button-group">
+  <button id="startBtn">추적 시작</button>
+  <button id="stopBtn" disabled>정지</button>
+  <button id="resetBtn">초기화</button>
+</div>
+
 <div id="log">대기 중…</div>
 <div id="result"></div>
 
@@ -135,7 +156,7 @@ function send(lat,lon,acc){
   .catch(e=>{log('❌ 요청 실패: '+e);});
 }
 
-// ✅ 세션 초기화 버튼 기능
+// ✅ 세션 초기화 버튼
 document.getElementById('resetBtn').onclick=()=>{
   if(watchId!==null){
     navigator.geolocation.clearWatch(watchId);
@@ -147,7 +168,7 @@ document.getElementById('resetBtn').onclick=()=>{
     document.getElementById('startBtn').disabled=false;
     document.getElementById('stopBtn').disabled=true;
     document.getElementById('result').innerHTML='';
-    log('🌀 세션이 초기화되었습니다. 다시 시작하려면 [실시간 추적 시작]을 누르세요.');
+    log('🌀 세션이 초기화되었습니다. 다시 시작하려면 [추적 시작]을 누르세요.');
   })
   .catch(e=>log('❌ 초기화 실패: '+e));
 };
@@ -270,3 +291,4 @@ def update():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=False)
+
